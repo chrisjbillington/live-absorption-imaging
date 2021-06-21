@@ -4,6 +4,7 @@
 import sys
 import json
 import threading
+from pathlib import Path
 
 import numpy as np
 from tqdm import tqdm
@@ -20,6 +21,12 @@ try:
 except (ValueError, IndexError):
     raise ValueError("Must provide camera's BLACS tab's PUB port number as a command line arg.")
 
+
+SAVE_RAW_IMAGES = True
+LOAD_SAVED_IMAGES = True
+
+if SAVE_RAW_IMAGES:
+    Path('saved_images').mkdirs(exist_ok=True)
 
 class ReconstructedAbsorptionImaging:
     # Number of background images 
@@ -59,17 +66,28 @@ class ReconstructedAbsorptionImaging:
     def collect_bg_images(self):
         input("Begin acquiring dark images and press enter")
         self.new_sock()
-        for _ in tqdm(range(self.N_bg), desc="collecting dark images"):
-            image = self.recvimg()
+        for i in tqdm(range(self.N_bg), desc="collecting dark images"):
+            if LOAD_SAVED_IMAGES:
+                image = np.load(f'saved_images/dark_{i:04d}.npy')
+            else:
+                image = self.recvimg()
+            if SAVE_RAW_IMAGES:
+                np.save(f'saved_images/dark_{i:04d}.npy', image)
             self.averager.add_ref_image(image)
+            
         self.sock.close()
         self.dark = self.averager.get_average()
 
     def collect_probe_images(self):
         input("Begin acquiring probe images and press enter")
         self.new_sock()
-        for _ in tqdm(range(self.N_probe), desc="collecting probe images"):
-            image = self.recvimg()
+        for i in tqdm(range(self.N_probe), desc="collecting probe images"):
+            if LOAD_SAVED_IMAGES:
+                image = np.load(f'saved_images/probe_{i:04d}.npy')
+            else:
+                image = self.recvimg()
+            if SAVE_RAW_IMAGES:
+                np.save(f'saved_images/probe_{i:04d}.npy', image)
             self.reconstructor.add_ref_image(image)
         self.sock.close()
 
@@ -91,8 +109,13 @@ class ReconstructedAbsorptionImaging:
 
     def _collect_absorption_images(self):
         self.new_sock()
-        while not self.stopping:
-            absorption = self.recvimg()
+        for i in range(self.N_probe):
+            if LOAD_SAVED_IMAGES:
+                absorption = np.load(f'saved_images/atoms_{i:04d}.npy')
+            else:
+                absorption = self.recvimg()
+            if SAVE_RAW_IMAGES:
+                np.save(f'saved_images/probe_{i:04d}.npy', absorption)
             recon_probe, _ = self.reconstructor.reconstruct(absorption, mask=self.mask)
             absorbed_fraction = 1 - (absorption.astype(float) - self.dark) / (recon_probe - self.dark)
             self.image = 1000 * absorbed_fraction
